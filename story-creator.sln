@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "story-creator", "story-creator\story-creator.fsproj", "{7864A842-7B70-4F99-AD15-5A72CE351153}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7864A842-7B70-4F99-AD15-5A72CE351153}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7864A842-7B70-4F99-AD15-5A72CE351153}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7864A842-7B70-4F99-AD15-5A72CE351153}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7864A842-7B70-4F99-AD15-5A72CE351153}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
