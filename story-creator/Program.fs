@@ -1,5 +1,10 @@
 ﻿open System
 
+open System.Net.Http
+open System.Text
+open System.Net.Http.Headers
+open System.Text.Json
+
 // story type 
 type Genre = | Fantasy | Mystery | SciFi
 
@@ -21,6 +26,88 @@ type StoryState = {
 
 module StoryEngine =
     
+    let callAiApi (prompt: string) : string * string list =
+        // printfn "\n--- AI Prompt (Debug) ---"
+        // printfn "%s" prompt
+        // printfn "--- End AI Prompt ---\n"
+        
+        // HTTP client
+        use client = new HttpClient()
+        let envKey = Environment.GetEnvironmentVariable("AI_API_KEY")
+        let apiKey =
+            match String.IsNullOrEmpty(envKey) with
+            | true -> "sk-123"
+            | _ -> envKey
+        
+        client.DefaultRequestHeaders.Accept.Add(MediaTypeWithQualityHeaderValue("application/json"))
+        client.DefaultRequestHeaders.Authorization <- AuthenticationHeaderValue("Bearer", apiKey)
+        
+        let requestContent = 
+            JsonSerializer.Serialize(
+                {|
+                    model = "gpt-4o-mini"
+                    messages = 
+                        [|
+                            {| role = "system"; content = "You are an interactive storytelling AI. Create engaging, concise story segments with 2 distinct choices for the user." |}
+                            {| role = "user"; content = prompt |}
+                        |]
+                    max_tokens = 300
+                    temperature = 0.7
+                |})
+        let content = new StringContent(requestContent, Encoding.UTF8, "application/json")
+        
+        try
+            let response = client.PostAsync("https://api.openai.com/v1/chat/completions", content).Result
+            response.EnsureSuccessStatusCode() |> ignore
+            
+            let responseBody = response.Content.ReadAsStringAsync().Result
+            let jsonResponse = JsonDocument.Parse(responseBody)
+            
+            let responseText = 
+                jsonResponse.RootElement
+                    .GetProperty("choices").[0]
+                    .GetProperty("message")
+                    .GetProperty("content")
+                    .GetString()
+            
+
+            // expected format: story segment followed by numbered choices
+            let lines = responseText.Split([|"\n"|], StringSplitOptions.None)
+            
+            let storyLines = 
+                lines 
+                |> Array.takeWhile (fun line -> not(line.Trim().StartsWith("1.") || line.Trim().StartsWith("Option 1:") || String.IsNullOrWhiteSpace(line)))
+            
+            let choiceLines =
+                lines
+                |> Array.skipWhile (fun line -> not(line.Trim().StartsWith("1.") || line.Trim().StartsWith("Option 1:") || String.IsNullOrWhiteSpace(line)))
+                |> Array.filter (fun line -> 
+                    line.Trim().StartsWith("1.") || line.Trim().StartsWith("2.") ||
+                    line.Trim().StartsWith("Option 1:") || line.Trim().StartsWith("Option 2:"))
+            
+            let storySegment = String.Join(" ", storyLines).Trim()
+            
+            let choices = 
+                choiceLines
+                |> Array.map (fun line -> 
+                    line.Replace("1.", "").Replace("2.", "")
+                        .Replace("Option 1:", "").Replace("Option 2:", "")
+                        .Trim())
+                |> Array.toList
+            
+            let finalChoices = 
+                if List.length choices >= 2 then choices |> List.take 2
+                else ["Continue forward"; "Take another path"]
+            
+            (storySegment, finalChoices)
+        with
+        | ex -> 
+            printfn $"API Error: %s{ex.Message}"
+            // Fallback content in case of API failure
+            ("The path ahead seems uncertain as you consider your next move.", 
+             ["Proceed with caution"; "Try a different approach"])
+
+    // Helper to determine the next logical stage
     let getNextStage current =
         match current with
         | Introduction -> ActionConflict
@@ -32,7 +119,7 @@ module StoryEngine =
     // (mock implementation)
     let callMockAiApi (prompt: string) : string * string list =
         printfn "\n--- AI Prompt (Debug) ---"
-        printfn "%s" prompt
+        printfn $"%s{prompt}"
         printfn "--- End AI Prompt ---\n"
 
         let segment, choices =
@@ -40,7 +127,7 @@ module StoryEngine =
                 "You stand at a misty crossroads in the ancient forest. A weathered signpost points in two directions.", ["Examine the 'Whispering Path' sign"; "Check the 'Silent Cave' sign"]
             elif prompt.Contains("ActionConflict") then
                 let choice = if Random().Next(2) = 0 then "shadowy figure" else "sudden tremor"
-                sprintf "As you proceed, a %s emerges! Danger is imminent." choice, ["Confront the threat directly"; "Look for cover or an escape route"]
+                $"As you proceed, a %s{choice} emerges! Danger is imminent.", ["Confront the threat directly"; "Look for cover or an escape route"]
             elif prompt.Contains("AmbiguityMystery") then
                 "You discover a cryptic locket half-buried in the mud. It feels strangely warm.", ["Open the locket immediately"; "Leave the locket, sensing a trap"]
             elif prompt.Contains("ClimaxResolution") then
@@ -72,7 +159,7 @@ module StoryEngine =
             |> Option.map (sprintf "User chose: %s")
             |> Option.defaultValue ""
 
-        sprintf "Generate the next part of a %A story. \n%s \n%s \nCurrent Narrative Goal: %s \nKeep the story segment concise (1-2 sentences). \nProvide 2 short, distinct choices for the user based on the segment. \n--- \n" state.Genre context choiceInfo stageGoal
+        $"Generate the next part of a %A{state.Genre} story. \n%s{context} \n%s{choiceInfo} \nCurrent Narrative Goal: %s{stageGoal} \nKeep the story segment concise (1-2 sentences). \nProvide 2 short, distinct choices for the user based on the segment. \n--- \n"
 
     // story engine core - pure transition function (conceptually)
     let transition (currentState: StoryState) (userChoice: string) : StoryState =
@@ -109,13 +196,13 @@ module ConsoleUI =
 
     let displayState (state: StoryState) : unit =
         printfn "\n========================================"
-        printfn "%s" state.CurrentText
+        printfn $"%s{state.CurrentText}"
         printfn "========================================"
 
         if not (List.isEmpty state.Choices) then
             printfn "What do you do next?"
             state.Choices
-            |> List.iteri (fun i choice -> printfn "%d. %s" (i + 1) choice)
+            |> List.iteri (fun i choice -> printfn $"%d{i + 1}. %s{choice}")
         else
             printfn "\n--- THE END ---"
 
@@ -128,7 +215,7 @@ module ConsoleUI =
         | true, index when index >= 1 && index <= List.length choices ->
             choices.[index - 1] 
         | _ ->
-            printfn "Invalid input. Please enter a number between 1 and %d." (List.length choices)
+            printfn $"Invalid input. Please enter a number between 1 and %d{List.length choices}."
             getUserChoice choices // Retry
 
     let rec selectGenre () : Genre =
