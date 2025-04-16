@@ -6,7 +6,7 @@ open System.Net.Http.Headers
 open System.Text.Json
 
 // story type 
-type Genre = | Fantasy | Mystery | SciFi
+type Genre = | Fantasy | Mystery | SciFi | Romance | Comedy
 
 type Stage =
     | Introduction       // set scene, introduce characters
@@ -27,11 +27,7 @@ type StoryState = {
 module StoryEngine =
     
     let callAiApi (prompt: string) : string * string list =
-        // printfn "\n--- AI Prompt (Debug) ---"
-        // printfn "%s" prompt
-        // printfn "--- End AI Prompt ---\n"
-        
-        // HTTP client
+
         use client = new HttpClient()
         let envKey = Environment.GetEnvironmentVariable("AI_API_KEY")
         let apiKey =
@@ -45,7 +41,7 @@ module StoryEngine =
         let requestContent = 
             JsonSerializer.Serialize(
                 {|
-                    model = "gpt-4o-mini"
+                    model = "llama-3.1-8b-instant"
                     messages = 
                         [|
                             {| role = "system"; content = "You are an interactive storytelling AI. Create engaging, concise story segments with 2 distinct choices for the user." |}
@@ -57,7 +53,7 @@ module StoryEngine =
         let content = new StringContent(requestContent, Encoding.UTF8, "application/json")
         
         try
-            let response = client.PostAsync("https://api.openai.com/v1/chat/completions", content).Result
+            let response = client.PostAsync("https://api.groq.com/openai/v1/chat/completions", content).Result
             response.EnsureSuccessStatusCode() |> ignore
             
             let responseBody = response.Content.ReadAsStringAsync().Result
@@ -116,30 +112,6 @@ module StoryEngine =
         | ClimaxResolution -> End
         | End -> End
 
-    // (mock implementation)
-    let callMockAiApi (prompt: string) : string * string list =
-        printfn "\n--- AI Prompt (Debug) ---"
-        printfn $"%s{prompt}"
-        printfn "--- End AI Prompt ---\n"
-
-        let segment, choices =
-            if prompt.Contains("Introduce") then
-                "You stand at a misty crossroads in the ancient forest. A weathered signpost points in two directions.", ["Examine the 'Whispering Path' sign"; "Check the 'Silent Cave' sign"]
-            elif prompt.Contains("ActionConflict") then
-                let choice = if Random().Next(2) = 0 then "shadowy figure" else "sudden tremor"
-                $"As you proceed, a %s{choice} emerges! Danger is imminent.", ["Confront the threat directly"; "Look for cover or an escape route"]
-            elif prompt.Contains("AmbiguityMystery") then
-                "You discover a cryptic locket half-buried in the mud. It feels strangely warm.", ["Open the locket immediately"; "Leave the locket, sensing a trap"]
-            elif prompt.Contains("ClimaxResolution") then
-                "The final challenge stands before you! With a surge of effort, you overcome it. The immediate danger has passed.", ["Survey the aftermath"; "Begin your journey home"]
-            elif prompt.Contains("End") then
-                "And so, your adventure concludes. The echoes of your choices linger in the air.", [] // No choices at the end
-            else // fallback
-                "An unexpected calm settles. What happens next is unclear.", ["Wait and observe"; "Press onward cautiously"]
-
-        Threading.Thread.Sleep(500)
-        segment, choices
-
     let generatePrompt (state: StoryState) (userChoice: string option) : string =
         let stageGoal =
              match state.CurrentStage with
@@ -158,9 +130,14 @@ module StoryEngine =
             userChoice
             |> Option.map (sprintf "User chose: %s")
             |> Option.defaultValue ""
+            
+        let exampleOutput =
+            "Example Output Structure:\n" +
+            "As Captain {Whatevername}'s ship, the Celestial Horizon, descended onto ...\n" +
+            "Option 1: You go with the captin.\n" +
+            "Option 2: You let them leave without you.\n"
 
-        $"Generate the next part of a %A{state.Genre} story. \n%s{context} \n%s{choiceInfo} \nCurrent Narrative Goal: %s{stageGoal} \nKeep the story segment concise (1-2 sentences). \nProvide 2 short, distinct choices for the user based on the segment. \n--- \n"
-
+        $"Generate the next part of a %A{state.Genre} story.\n%s{context}\n%s{choiceInfo}\nCurrent Narrative Goal: %s{stageGoal}\nKeep the story segment concise (1-2 sentences).\nProvide 2 short, distinct choices for actions the user might be able to do based on the segment.\n---\n%s{exampleOutput}"
     // story engine core - pure transition function (conceptually)
     let transition (currentState: StoryState) (userChoice: string) : StoryState =
         if currentState.CurrentStage = End then currentState 
@@ -197,7 +174,7 @@ module ConsoleUI =
     let displayState (state: StoryState) : unit =
         printfn "\n========================================"
         printfn $"%s{state.CurrentText}"
-        printfn "========================================"
+        printfn "=========================================="
 
         if not (List.isEmpty state.Choices) then
             printfn "What do you do next?"
@@ -223,11 +200,15 @@ module ConsoleUI =
         printfn "1. Fantasy"
         printfn "2. Mystery"
         printfn "3. SciFi"
+        printfn "4. Romance"
+        printfn "5. Comedy"
         printf "> "
         match Console.ReadLine() with
         | "1" -> Fantasy
         | "2" -> Mystery
         | "3" -> SciFi
+        | "4" -> Romance
+        | "5" -> Comedy
         | _ ->
             printfn "Invalid selection. Please enter 1, 2, or 3."
             selectGenre() // Retry
